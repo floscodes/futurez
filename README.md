@@ -32,7 +32,7 @@ For a complete example showcasing advanced usage with dynamic allocations and mu
 
 ## Overview
 
-coroutinez spawns as many worker threads as logical CPU cores available on your machine. These threads continuously pick up and run asynchronous tasks you spawn via `Runtime.spawn`. Finished tasks remain in the task queue until you call the `Await()` method on the associated `*Task` to retrieve the result.
+coroutinez spawns as many worker threads as logical CPU cores available on your machine. These threads continuously pick up and run asynchronous tasks you spawn via `Runtime.spawn`. Finished tasks remain in the task queue until you call the `join()` method on the associated `*Task` to retrieve the result.
 
 You can also control the number of worker threads by initializing the runtime with a specific core count using `initWithCores()`:
 
