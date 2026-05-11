@@ -19,7 +19,7 @@ fn main() !void {
     defer rt.deinit();
 
     const task = try rt.spawn(myTaskFunction, .{});
-    const task = task.join(i32);
+    const result = task.join(i32);
     std.debug.print("Result: {d}\n", .{result});
 }
 
