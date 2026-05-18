@@ -7,6 +7,10 @@ const CpuCountError = error{
     InvalidCpuCount,
 };
 
+fn io() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
+}
+
 /// The `Runtime` struct provides a thread pool and task management for execution of functions using coroutines.
 /// It allows spawning tasks that can be awaited, and manages the lifecycle of these tasks.
 /// The runtime can be initialized with a specific number of CPU cores, or it defaults to the number of available cores.
@@ -14,8 +18,8 @@ const CpuCountError = error{
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
     task_queue: std.ArrayList(*Task),
-    mutex: std.Thread.Mutex,
-    cond: std.Thread.Condition,
+    mutex: std.Io.Mutex,
+    cond: std.Io.Condition,
     threads: []std.Thread,
     threads_started: bool = false,
     stop_flag: *bool,
@@ -31,21 +35,21 @@ pub const Runtime = struct {
     pub fn initWithCores(allocator: std.mem.Allocator, cpu_count: usize) !Self {
         const cores = try std.Thread.getCpuCount();
         if (cpu_count == 0 or cpu_count > cores) return CpuCountError.InvalidCpuCount;
-        return try Self.initRuntime(cores, allocator);
+        return try Self.initRuntime(cpu_count, allocator);
     }
 
     // Private function to initialize the runtime with a specific number of CPU cores.
     fn initRuntime(cpu_count: usize, allocator: std.mem.Allocator) !Self {
         const stop = try allocator.create(bool);
         stop.* = false;
-        const task_queue = std.ArrayList(*Task).init(allocator);
+        const task_queue = std.ArrayList(*Task).empty;
         const threads = try allocator.alloc(std.Thread, cpu_count);
         return Self{
             .allocator = allocator,
             .task_queue = task_queue,
             .threads = threads,
-            .mutex = .{},
-            .cond = .{},
+            .mutex = .init,
+            .cond = .init,
             .stop_flag = stop,
         };
     }
@@ -54,15 +58,15 @@ pub const Runtime = struct {
     /// This method waits for all tasks in the queue to finish before shutting down the worker threads.
     /// It is important to call this method to avoid memory leaks and ensure that all resources are properly released.
     pub fn deinit(self: *Self) void {
-        for (self.task_queue.items) |task| {
-            _ = task.join(*anyopaque);
+        while (self.task_queue.items.len > 0) {
+            _ = self.task_queue.items[0].join(*anyopaque);
         }
 
         if (self.threads_started) {
-            self.mutex.lock();
+            std.Io.Threaded.mutexLock(&self.mutex);
             self.stop_flag.* = true;
-            self.cond.broadcast();
-            self.mutex.unlock();
+            self.cond.broadcast(io());
+            std.Io.Threaded.mutexUnlock(&self.mutex);
             for (self.threads) |thread| {
                 thread.join();
             }
@@ -70,7 +74,7 @@ pub const Runtime = struct {
 
         self.allocator.free(self.threads);
         self.allocator.destroy(self.stop_flag);
-        self.task_queue.deinit();
+        self.task_queue.deinit(self.allocator);
     }
 
     /// Spawns a task using the provided function `F` and parameters `params`.
@@ -87,8 +91,10 @@ pub const Runtime = struct {
         const task_wrapper = TaskWrapper(F, ParamType);
         var gen_instance = task_wrapper.create(self.allocator);
         gen_instance.params = params;
+        errdefer gen_instance.destroy();
 
         const wrapper_instance = try self.allocator.create(WrapperStruct);
+        errdefer self.allocator.destroy(wrapper_instance);
 
         wrapper_instance.* = .{
             .self = @alignCast(@ptrCast(gen_instance)),
@@ -97,15 +103,20 @@ pub const Runtime = struct {
             .output = @alignCast(@ptrCast(&gen_instance.output)),
             .wrapper_destroy_fn = @alignCast(@ptrCast(gen_instance.destroy_fn)),
         };
+
         const task = try self.allocator.create(Task);
+        errdefer self.allocator.destroy(task);
+
         task.* = Task{
             .runtime = self,
             .task_wrapper = wrapper_instance,
         };
-        self.mutex.lock();
-        try self.task_queue.append(task);
-        self.mutex.unlock();
-        self.cond.signal();
+
+        std.Io.Threaded.mutexLock(&self.mutex);
+        errdefer std.Io.Threaded.mutexUnlock(&self.mutex);
+        try self.task_queue.append(self.allocator, task);
+        std.Io.Threaded.mutexUnlock(&self.mutex);
+        self.cond.signal(io());
         return task;
     }
 };
@@ -115,8 +126,8 @@ pub const Task = struct {
     const TaskSelf = @This();
     runtime: *Runtime,
     task_wrapper: *WrapperStruct,
-    mutex: std.Thread.Mutex = .{},
-    cond: std.Thread.Condition = .{},
+    mutex: std.Io.Mutex = .init,
+    cond: std.Io.Condition = .init,
     status: TaskStatus = .Pending,
 
     /// Joins a task, blocking until the operation is complete.
@@ -125,9 +136,9 @@ pub const Task = struct {
     /// Make sure that the type `T` matches the output type of the executed function.
     /// After joining, the task is cleaned up and its resources are released.
     pub fn join(self: *Task, T: type) T {
-        self.mutex.lock();
+        std.Io.Threaded.mutexLock(&self.mutex);
         while (self.status != .Finished) {
-            self.cond.wait(&self.mutex);
+            self.cond.waitUncancelable(io(), &self.mutex);
         }
         const output: *T = @alignCast(@ptrCast(self.task_wrapper.output));
         const result = output.*;
@@ -137,15 +148,15 @@ pub const Task = struct {
 
         for (self.runtime.task_queue.items, 0..) |item, idx| {
             if (item == self) {
-                self.runtime.mutex.lock();
+                std.Io.Threaded.mutexLock(&self.runtime.mutex);
                 _ = self.runtime.task_queue.orderedRemove(idx);
-                self.runtime.mutex.unlock();
-                self.runtime.cond.broadcast();
+                std.Io.Threaded.mutexUnlock(&self.runtime.mutex);
+                self.runtime.cond.broadcast(io());
                 break;
             }
         }
 
-        self.mutex.unlock();
+        std.Io.Threaded.mutexUnlock(&self.mutex);
         self.runtime.allocator.destroy(self);
         return result;
     }
@@ -166,17 +177,18 @@ const TaskStatus = enum {
     Running,
     Finished,
 };
+
 // The worker thread function that processes tasks from the runtime's task queue.
 fn workerThread(runtime: *Runtime) void {
     while (true) {
-        runtime.mutex.lock();
+        std.Io.Threaded.mutexLock(&runtime.mutex);
 
         while (runtime.task_queue.items.len == 0 and !runtime.stop_flag.*) {
-            runtime.cond.wait(&runtime.mutex);
+            runtime.cond.waitUncancelable(io(), &runtime.mutex);
         }
 
         if (runtime.stop_flag.*) {
-            runtime.mutex.unlock();
+            std.Io.Threaded.mutexUnlock(&runtime.mutex);
             break;
         }
 
@@ -190,14 +202,15 @@ fn workerThread(runtime: *Runtime) void {
             }
         }
 
-        runtime.mutex.unlock();
+        std.Io.Threaded.mutexUnlock(&runtime.mutex);
 
         if (task) |t| {
-            t.mutex.lock();
+            std.Io.Threaded.mutexLock(&t.mutex);
             t.task_wrapper.run_fn(t.task_wrapper.self);
             t.status = .Finished;
-            t.mutex.unlock();
-            t.cond.broadcast();
+            t.cond.broadcast(io());
+            std.Io.Threaded.mutexUnlock(&t.mutex);
+            // Do NOT access t after this point: join() may free it immediately.
         }
     }
 }

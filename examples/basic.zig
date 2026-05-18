@@ -1,12 +1,12 @@
 const std = @import("std");
-const azync = @import("coroutinez");
+const coroutinez = @import("coroutinez");
 const Runtime = coroutinez.Runtime;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
     // Initialize the runtime with default number of CPU cores
-    const rt = try Runtime.init(allocator);
+    var rt = try Runtime.init(allocator);
     defer rt.deinit();
 
     // Spawn tasks, passing parameters as a tuple

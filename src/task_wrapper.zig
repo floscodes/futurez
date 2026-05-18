@@ -7,6 +7,12 @@ pub fn TaskWrapper(comptime F: anytype, comptime ParamType: type) type {
         @compileError("Spawned task must be a function!");
     }
 
+    const ReturnType = tinfo.@"fn".return_type.?;
+    const OutputType = switch (@typeInfo(ReturnType)) {
+        .error_union => |eu| eu.payload,
+        else => ReturnType,
+    };
+
     return struct {
         pub const Self = @This();
 
@@ -24,7 +30,12 @@ pub fn TaskWrapper(comptime F: anytype, comptime ParamType: type) type {
         }
 
         pub fn run(self: *Self) void {
-            self.output = @call(.auto, F, self.params);
+            const result = @call(.auto, F, self.params);
+            if (comptime @typeInfo(ReturnType) == .error_union) {
+                self.output = result catch unreachable;
+            } else {
+                self.output = result;
+            }
         }
 
         pub fn run_thunk(ctx: *anyopaque) void {
@@ -42,7 +53,7 @@ pub fn TaskWrapper(comptime F: anytype, comptime ParamType: type) type {
         }
 
         params: ParamType,
-        output: @typeInfo(@TypeOf(F)).@"fn".return_type.?,
+        output: OutputType,
         run_fn: *const fn (*anyopaque) void,
         destroy_fn: *const fn (*anyopaque) void,
         allocator: std.mem.Allocator,

@@ -10,25 +10,24 @@ fn testfn(_: []const u8) i32 {
 }
 
 fn testfn2(s: []const u8, n: i32, allocator: std.mem.Allocator) []const u8 {
-    var str = std.ArrayList(u8).init(allocator);
-    defer str.deinit();
+    var str = std.ArrayList(u8).empty;
+    defer str.deinit(allocator);
 
-    _ = str.appendSlice(s) catch unreachable;
-    _ = str.appendSlice("world!") catch unreachable;
-    _ = str.writer().print("{d}", .{n}) catch unreachable;
+    str.appendSlice(allocator, s) catch unreachable;
+    str.appendSlice(allocator, "world!") catch unreachable;
+    str.print(allocator, "{d}", .{n}) catch unreachable;
 
-    return str.toOwnedSlice() catch unreachable;
+    return str.toOwnedSlice(allocator) catch unreachable;
 }
 
-fn testfn3() ![]const u8 {
-    const allocator = std.testing.allocator;
-    var str = std.ArrayList(u8).init(allocator);
-    defer str.deinit();
+fn testfn3(allocator: std.mem.Allocator) ![]const u8 {
+    var str = std.ArrayList(u8).empty;
+    defer str.deinit(allocator);
 
-    _ = try str.appendSlice("testfn3");
-    _ = try str.appendSlice(" world!");
+    try str.appendSlice(allocator, "testfn3");
+    try str.appendSlice(allocator, " world!");
 
-    return try str.toOwnedSlice();
+    return try str.toOwnedSlice(allocator);
 }
 
 // TESTS
@@ -36,7 +35,6 @@ fn testfn3() ![]const u8 {
 test "init and deinit Runtime" {
     const allocator = std.testing.allocator;
     var rt = try Runtime.init(allocator);
-    std.time.sleep(10 * std.time.ns_per_ms);
     rt.deinit();
 }
 
@@ -101,7 +99,7 @@ test "testfn3" {
     const allocator = std.testing.allocator;
     var rt = try Runtime.init(allocator);
     defer rt.deinit();
-    const task = try rt.spawn(testfn3, .{});
+    const task = try rt.spawn(testfn3, .{allocator});
     const result = task.join([]const u8);
     defer allocator.free(result);
     std.debug.assert(std.mem.eql(u8, result, "testfn3 world!"));
@@ -114,7 +112,7 @@ test "testfn, testfn2 and testfn3" {
 
     const future1 = try rt.spawn(testfn, .{"task1"});
     const future2 = try rt.spawn(testfn2, .{ "task2 ", 100, allocator });
-    const future3 = try rt.spawn(testfn3, .{});
+    const future3 = try rt.spawn(testfn3, .{allocator});
 
     const result1 = future1.join(i32);
     std.debug.assert(result1 == 31);
@@ -135,7 +133,7 @@ test "test all testfns two times and join them" {
 
     const future1 = try rt.spawn(testfn, .{"task1"});
     const future2 = try rt.spawn(testfn2, .{ "task2 ", 100, allocator });
-    const future3 = try rt.spawn(testfn3, .{});
+    const future3 = try rt.spawn(testfn3, .{allocator});
 
     const result1 = future1.join(i32);
     std.debug.assert(result1 == 31);
@@ -151,7 +149,7 @@ test "test all testfns two times and join them" {
     // Run them again
     const future4 = try rt.spawn(testfn, .{"task1"});
     const future5 = try rt.spawn(testfn2, .{ "task2 ", 200, allocator });
-    const future6 = try rt.spawn(testfn3, .{});
+    const future6 = try rt.spawn(testfn3, .{allocator});
 
     const result4 = future4.join(i32);
     std.debug.assert(result4 == 31);
@@ -174,7 +172,7 @@ test "spawn testfn, testfn2 and tesfn3 20 times and join them, free memory of th
         const future1 = try rt.spawn(testfn, .{"task1"});
         const n: i32 = @intCast(i);
         const future2 = try rt.spawn(testfn2, .{ "task2 ", n, allocator });
-        const future3 = try rt.spawn(testfn3, .{});
+        const future3 = try rt.spawn(testfn3, .{allocator});
 
         const result1 = future1.join(i32);
         std.debug.assert(result1 == 31);
