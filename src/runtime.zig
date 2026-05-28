@@ -11,8 +11,8 @@ fn io() std.Io {
     return std.Io.Threaded.global_single_threaded.io();
 }
 
-/// The `Runtime` struct provides a thread pool and task management for execution of functions using coroutines.
-/// It allows spawning tasks that can be awaited, and manages the lifecycle of these tasks.
+/// The `Runtime` struct provides a thread pool and task management for execution of futures.
+/// It allows spawning tasks that can be joined, and manages the lifecycle of these tasks.
 /// The runtime can be initialized with a specific number of CPU cores, or it defaults to the number of available cores.
 /// It handles task scheduling, execution, and cleanup, ensuring that resources are properly managed.
 pub const Runtime = struct {
@@ -121,7 +121,7 @@ pub const Runtime = struct {
     }
 };
 
-/// Represents a task that can be joined, encapsulating the result of an operation that runs on a coroutine.
+/// Represents a future that can be joined, encapsulating the result of an asynchronous operation.
 pub const Task = struct {
     const TaskSelf = @This();
     runtime: *Runtime,

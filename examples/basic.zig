@@ -1,6 +1,6 @@
 const std = @import("std");
-const coroutinez = @import("coroutinez");
-const Runtime = coroutinez.Runtime;
+const futurez = @import("futurez");
+const Runtime = futurez.Runtime;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;

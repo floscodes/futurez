@@ -1,6 +1,6 @@
-name: coroutinez
+name: futurez
 main: src/root.zig
 license: MIT
-description: coroutinez is a runtime for running tasks using coroutines in zig.
+description: futurez is a runtime for running asynchronous tasks using futures in zig.
 min_zig_version: 0.14.1
 dependencies:

@@ -6,7 +6,7 @@
     //
     // It is redundant to include "zig" in this name because it is already
     // within the Zig package namespace.
-    .name = .coroutinez,
+    .name = .futurez,
     .authors = "flopetautschnig (floscodes) <mail@floscodes.net>",
 
     // This is a [Semantic Version](https://semver.org/).
