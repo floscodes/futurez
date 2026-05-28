@@ -1,6 +1,6 @@
 # futurez
 
-[![CI](https://github.com/floscodes/coroutinez/actions/workflows/ci.yml/badge.svg)](https://github.com/floscodes/coroutinez/actions/workflows/ci.yml)
+[![CI](https://github.com/floscodes/futurez/actions/workflows/ci.yml/badge.svg)](https://github.com/floscodes/futurez/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 futurez is a small runtime for running asynchronous tasks using futures in Zig.
